@@ -4,7 +4,7 @@ Technical decisions for the MMO's networking layer.
 
 ## Stack
 
-- Rust + tokio
+- C++
 - TCP only (no UDP for now)
 - Single server, single IP:port handles all players — one socket per player, all sharing the same port
 
@@ -27,3 +27,6 @@ Client doesn't request chunks; it streams its position, and the server decides w
 - Read tasks deserialize `ClientMessage` and funnel `(PlayerId, msg)` into one shared mpsc → game loop (this is where multi-producer matters).
 - Game loop: single task, fixed tick (10–30/s): drain inputs, simulate, then push per-player updates using interest management (only nearby entities/chunks).
 - Writing: per-player mpsc + write task (here effectively just an async queue — single producer) so a slow client can't stall the tick. Simplification agreed for the prototype: the game loop may own write halves directly in a `HashMap<PlayerId, WriteHalf>` and skip the write channels until slow clients are a real problem. 
+
+## Frontend
+three js
