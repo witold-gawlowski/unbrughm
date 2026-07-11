@@ -5,21 +5,22 @@ view, where the dungeon layout is designed with an ASCII map.
 
 ## Running
 
-`index.html` loads the map with `fetch()`, which browsers block over `file://`.
-So serve the folder over HTTP:
+The game is online-only: the client connects to the Go server in the sibling
+[`unbrughm-server`](../unbrughm-server) repo, which serves these static files
+*and* runs the multiplayer session (world state, movement, digs). From that
+repo:
 
 ```
-python -m http.server 8000
+go run ./cmd/server
 ```
 
-Then open <http://localhost:8000/>.
-
-Any static server works (`npx serve`, VS Code Live Server, etc.).
+Then open <http://localhost:8000/> — one tab per player.
 
 ## Designing the dungeon
 
 The world is an infinite plane of solid cubes; the map carves holes into it.
-Edit `dungeon.txt`:
+Edit `dungeon.txt` **in the server repo** (the copy here is no longer read —
+the server sends the dug cells over the wire):
 
 - `#` &nbsp;→ solid rock cube (same as the surrounding infinite field)
 - anything else (`.`, space) → a dug-out gap (a hole in the field)

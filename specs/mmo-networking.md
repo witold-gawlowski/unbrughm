@@ -4,7 +4,7 @@ Technical decisions for the MMO's networking layer.
 
 ## Stack
 
-- C++
+- Go
 - TCP only (no UDP for now)
 - Single server, single IP:port handles all players — one socket per player, all sharing the same port
 

@@ -1,4 +1,4 @@
-// The player's ball: a white sphere resting on the tunnel floor. On a click it
+// The player's ball: a sphere resting on the tunnel floor. On a click it
 // routes through the dug tunnels to the destination (A* + string-pulling in
 // path.js), following the resulting straight legs at constant speed and hugging
 // corners without clipping rock.
@@ -7,20 +7,23 @@ import * as THREE from 'three';
 import { SIZE, BALL_RADIUS, BALL_SPEED, SHADOWS } from './config.js';
 import { findPath, smoothPath } from './path.js';
 
-export function createBall({ scene, isSolid, bounds }) {
-  const restY = -SIZE / 2 + BALL_RADIUS * SIZE;   // sit on the floor quad
+// Rest height so a ball sits on the floor quad. Shared with remote.js.
+export const REST_Y = -SIZE / 2 + BALL_RADIUS * SIZE;
 
+// The one ball look, local and remote alike — only the color differs.
+export function makeBallMesh(color) {
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(BALL_RADIUS * SIZE, 24, 16),
-    // Not darkness-patched: the ball only lives inside tunnels (distance 0).
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }));
+    // Not darkness-patched: balls only live inside tunnels (distance 0).
+    new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
   mesh.castShadow = mesh.receiveShadow = SHADOWS;   // drops a shadow on the floor
-  mesh.position.set(0, restY, 0);
-  scene.add(mesh);
+  return mesh;
+}
 
-  // Spawn on the dug cell nearest the origin.
-  const spawn = nearestDugCell(isSolid, bounds);
-  mesh.position.set(spawn.x * SIZE, restY, spawn.z * SIZE);
+export function createBall({ scene, isSolid, spawn, color = 0xffffff }) {
+  const mesh = makeBallMesh(color);
+  mesh.position.set(spawn.x * SIZE, REST_Y, spawn.z * SIZE);   // server-assigned cell
+  scene.add(mesh);
 
   const waypoints = [];   // remaining straight legs; the ball heads for [0]
   let arrivalCb = null;   // fired once when the ball finishes its current route
@@ -44,7 +47,7 @@ export function createBall({ scene, isSolid, bounds }) {
 
     const smooth = smoothPath(isSolid, pts, BALL_RADIUS * SIZE);
     waypoints.length = 0;
-    for (const p of smooth) waypoints.push(new THREE.Vector3(p.x, restY, p.z));
+    for (const p of smooth) waypoints.push(new THREE.Vector3(p.x, REST_Y, p.z));
   }
 
   // Glide toward waypoints[0] at constant speed, spilling any leftover distance
@@ -77,17 +80,5 @@ export function createBall({ scene, isSolid, bounds }) {
     return { x: Math.round(mesh.position.x / SIZE), z: Math.round(mesh.position.z / SIZE) };
   }
 
-  return { moveTo, update, getCell };
-}
-
-// Scan the map bounds for the dug (!isSolid) cell closest to (0, 0).
-function nearestDugCell(isSolid, bounds) {
-  let best = { x: 0, z: 0 }, bestD = Infinity;
-  for (let z = bounds.minZ; z <= bounds.maxZ; z++)
-    for (let x = bounds.minX; x <= bounds.maxX; x++) {
-      if (isSolid(x, z)) continue;
-      const d = x * x + z * z;
-      if (d < bestD) { bestD = d; best = { x, z }; }
-    }
-  return best;
+  return { moveTo, update, getCell, position: mesh.position };
 }

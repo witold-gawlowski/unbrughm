@@ -1,38 +1,14 @@
-// Load & parse the ASCII map.
-//
-// The world is an *infinite* plane of solid rock; the map carves holes into it.
-// Inside the map, '#' = solid rock, '.'/space = a dug-out gap. Every cell
-// outside the map is solid. Lines starting with ';' or blank lines are ignored;
-// rows may be ragged (width = longest row).
+// World geometry: an *infinite* plane of solid rock with holes carved into it.
+// The set of dug-out cells arrives from the server in the welcome message
+// (initial map gaps plus every dig so far); the server parses dungeon.txt now.
 
-export async function loadMap(url = 'dungeon.txt') {
-  const raw = await fetch(url).then(r => r.text());
-  const rows = raw.split('\n')
-    .map(l => l.replace(/\r$/, ''))
-    .filter(l => l.trim() !== '' && !l.startsWith(';'));
-  const gridW = Math.max(...rows.map(r => r.length));
-  const gridD = rows.length;
+export function createMap(dugCells) {
+  const dug = new Set(dugCells.map(([wx, wz]) => `${wx},${wz}`));
 
-  // Anchor the map on integer world-cell coordinates (centered on the origin)
-  // so chunks tile cleanly. A cell is solid unless it's a dug gap, and gaps are
-  // only the non-'#' cells that fall inside the map bounds.
-  const originX = Math.floor(gridW / 2);
-  const originZ = Math.floor(gridD / 2);
-  const dugCells = new Set();               // "wx,wz" of carved-out holes
-  for (let row = 0; row < gridD; row++)
-    for (let col = 0; col < gridW; col++)
-      if ((rows[row][col] ?? '') !== '#')
-        dugCells.add(`${col - originX},${row - originZ}`);
-
-  const isSolid = (wx, wz) => !dugCells.has(`${wx},${wz}`);
-  // Carve out a cell. isSolid closes over dugCells, so pathfinding and the
+  const isSolid = (wx, wz) => !dug.has(`${wx},${wz}`);
+  // Carve out a cell. isSolid closes over dug, so pathfinding and the
   // isSolid-seeded darkness bake see the change instantly.
-  const dig = (wx, wz) => { dugCells.add(`${wx},${wz}`); };
-  // World-cell rectangle the map occupies (inclusive), for anyone who needs to
-  // know where the carved region ends and the infinite solid rock begins.
-  const bounds = {
-    minX: -originX, maxX: gridW - 1 - originX,
-    minZ: -originZ, maxZ: gridD - 1 - originZ,
-  };
-  return { isSolid, dig, bounds, gridW, gridD };
+  const dig = (wx, wz) => { dug.add(`${wx},${wz}`); };
+
+  return { isSolid, dig };
 }
