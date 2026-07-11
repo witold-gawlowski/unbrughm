@@ -1,13 +1,16 @@
 // On-demand chunked terrain.
 //
-// Instead of one mesh per cube we merge each CHUNK_SIZE x CHUNK_SIZE tile into a
-// single geometry: one draw call per chunk, not per cube. Each frame we figure
-// out which chunks the camera can see (plus a buffer ring), queue any not yet
-// loaded, and build only a few per frame so a fast pan never stalls. Chunks that
-// scroll out of range are unloaded and their GPU geometry freed.
+// Each CHUNK_SIZE x CHUNK_SIZE tile is one geometry — one draw call per chunk,
+// not per cube. The geometry is generated procedurally, emitting only the faces
+// that can actually be seen (a solid cell's top, plus a side wall for each dug
+// neighbor; a dug cell's floor). Buried faces between two solid cells and all
+// bottom faces are never emitted — roughly a 6x triangle cut over full cubes,
+// and no per-cube clone/merge churn, so per-chunk rebuilds are cheap. Each frame
+// we figure out which chunks the camera can see (plus a buffer ring), queue any
+// not yet loaded, and build only a few per frame so a fast pan never stalls.
+// Chunks that scroll out of range are unloaded and their GPU geometry freed.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SIZE, CHUNK_SIZE, BUFFER_CHUNKS, BUILD_BUDGET, CHUNK_SPAN, SHADOWS } from './config.js';
 import { groundPoint } from './ground.js';
 
@@ -31,14 +34,6 @@ if (vUpness > 0.5) { reflectedLight.directDiffuse = vec3(0.0); reflectedLight.di
 }
 
 export function createChunkField({ scene, camera, target, isSolid, darkness }) {
-  const cubeGeometry = new THREE.BoxGeometry(SIZE, SIZE, SIZE);
-  // A floor quad laid flat at the bottom of the tunnels (y = -SIZE/2), so dug-out
-  // cells show a walkable base instead of the background void. Built once and
-  // cloned per cell, mirroring cubeGeometry.
-  const floorGeometry = new THREE.PlaneGeometry(SIZE, SIZE);
-  floorGeometry.rotateX(-Math.PI / 2);
-  floorGeometry.translate(0, -SIZE / 2, 0);
-
   // darkness patches the materials so rock fades per fragment with distance
   // from the tunnels (see darkness.js); floors are interior and stay lit.
   const rockMaterial = unlitTops(darkness.applyTo(
@@ -51,27 +46,74 @@ export function createChunkField({ scene, camera, target, isSolid, darkness }) {
   const queue = [];           // [{ cx, cz, key }] build queue, nearest-first
   const keyOf = (cx, cz) => `${cx},${cz}`;
 
+  // Push one quad (4 verts, 6 indices, a flat per-face normal repeated 4x) into
+  // a face bucket. `corners` are listed counter-clockwise as seen from `normal`,
+  // matching three.js front faces so backface culling keeps them.
+  function pushQuad(bucket, normal, corners) {
+    const base = bucket.pos.length / 3;
+    for (const [x, y, z] of corners) {
+      bucket.pos.push(x, y, z);
+      bucket.norm.push(normal[0], normal[1], normal[2]);
+    }
+    bucket.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
   function buildChunk(cx, cz) {
-    // Solid cells get a rock cube; dug-out cells get a floor quad. The two sets
-    // are merged separately, then combined into one geometry whose material
-    // groups pick rock vs floor per face.
-    const rockGeoms = [], floorGeoms = [];
+    // Emit only exposed faces. Rock and floor faces go to separate buckets so
+    // the final geometry can map them to [rockMaterial, floorMaterial] groups.
+    const h = SIZE / 2;
+    const rock = { pos: [], norm: [], idx: [] };
+    const floor = { pos: [], norm: [], idx: [] };
+
     for (let iz = 0; iz < CHUNK_SIZE; iz++) {
       for (let ix = 0; ix < CHUNK_SIZE; ix++) {
         const wx = cx * CHUNK_SIZE + ix, wz = cz * CHUNK_SIZE + iz;
-        const g = (isSolid(wx, wz) ? cubeGeometry : floorGeometry).clone();
-        g.translate(wx * SIZE, 0, wz * SIZE);
-        (isSolid(wx, wz) ? rockGeoms : floorGeoms).push(g);
+        const x = wx * SIZE, z = wz * SIZE;
+        if (isSolid(wx, wz)) {
+          // Top cap (camera is always above the plane).
+          pushQuad(rock, [0, 1, 0], [
+            [x - h, h, z - h], [x - h, h, z + h], [x + h, h, z + h], [x + h, h, z - h]]);
+          // A side wall for each dug-out neighbor; the global isSolid query spans
+          // chunk borders and the infinite outer rock seamlessly.
+          if (!isSolid(wx + 1, wz)) pushQuad(rock, [1, 0, 0], [
+            [x + h, -h, z - h], [x + h, h, z - h], [x + h, h, z + h], [x + h, -h, z + h]]);
+          if (!isSolid(wx - 1, wz)) pushQuad(rock, [-1, 0, 0], [
+            [x - h, -h, z - h], [x - h, -h, z + h], [x - h, h, z + h], [x - h, h, z - h]]);
+          if (!isSolid(wx, wz + 1)) pushQuad(rock, [0, 0, 1], [
+            [x - h, -h, z + h], [x + h, -h, z + h], [x + h, h, z + h], [x - h, h, z + h]]);
+          if (!isSolid(wx, wz - 1)) pushQuad(rock, [0, 0, -1], [
+            [x - h, -h, z - h], [x - h, h, z - h], [x + h, h, z - h], [x + h, -h, z - h]]);
+        } else {
+          // Floor at the tunnel bottom, so dug cells show a walkable base.
+          pushQuad(floor, [0, 1, 0], [
+            [x - h, -h, z - h], [x - h, -h, z + h], [x + h, -h, z + h], [x + h, -h, z - h]]);
+        }
       }
     }
-    // Assemble only the non-empty parts so material-group indices stay aligned.
-    const parts = [], materials = [];
-    if (rockGeoms.length) { parts.push(mergeGeometries(rockGeoms)); materials.push(rockMaterial); }
-    if (floorGeoms.length) { parts.push(mergeGeometries(floorGeoms)); materials.push(floorMaterial); }
-    [...rockGeoms, ...floorGeoms].forEach(g => g.dispose());
-    if (parts.length === 0) return null;
-    const geometry = parts.length === 1 ? parts[0] : mergeGeometries(parts, true);
-    parts.forEach(p => { if (p !== geometry) p.dispose(); });
+
+    // Assemble only the non-empty buckets so material-group indices stay aligned.
+    const parts = [];
+    if (rock.idx.length) parts.push([rock, rockMaterial]);
+    if (floor.idx.length) parts.push([floor, floorMaterial]);
+    if (parts.length === 0) return null;   // every cell emits a top or a floor, so never empty
+
+    const positions = [], normals = [], indices = [], materials = [];
+    const geometry = new THREE.BufferGeometry();
+    let vbase = 0;
+    for (const [bucket, material] of parts) {
+      const groupStart = indices.length;
+      for (let i = 0; i < bucket.pos.length; i++) positions.push(bucket.pos[i]);
+      for (let i = 0; i < bucket.norm.length; i++) normals.push(bucket.norm[i]);
+      for (let i = 0; i < bucket.idx.length; i++) indices.push(bucket.idx[i] + vbase);
+      if (parts.length > 1) geometry.addGroup(groupStart, bucket.idx.length, materials.length);
+      materials.push(material);
+      vbase += bucket.pos.length / 3;
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    const IndexArray = vbase > 65535 ? Uint32Array : Uint16Array;
+    geometry.setIndex(new THREE.BufferAttribute(new IndexArray(indices), 1));
+
     const mesh = new THREE.Mesh(geometry, materials.length === 1 ? materials[0] : materials);
     mesh.castShadow = mesh.receiveShadow = SHADOWS;   // walls shadow the tunnel floors
     return mesh;
