@@ -23,10 +23,14 @@ export function createBall({ scene, isSolid, bounds }) {
   mesh.position.set(spawn.x * SIZE, restY, spawn.z * SIZE);
 
   const waypoints = [];   // remaining straight legs; the ball heads for [0]
+  let arrivalCb = null;   // fired once when the ball finishes its current route
 
   // Plan a route from where the ball stands to the clicked point. Unreachable
-  // clicks (sealed pockets) leave the current path untouched.
-  function moveTo(point) {
+  // clicks (sealed pockets) leave the current path untouched. `onArrive`, if
+  // given, fires when this route completes; issuing any move overwrites it
+  // (clearing a stale callback), even on the unreachable early return.
+  function moveTo(point, onArrive) {
+    arrivalCb = onArrive ?? null;
     const start = { x: Math.round(mesh.position.x / SIZE), z: Math.round(mesh.position.z / SIZE) };
     const goal = { x: Math.round(point.x / SIZE), z: Math.round(point.z / SIZE) };
     const cells = findPath(isSolid, start, goal);
@@ -60,9 +64,20 @@ export function createBall({ scene, isSolid, bounds }) {
         step = 0;
       }
     }
+    // Arrived: fire the callback once. Snapshot and clear first so a moveTo
+    // issued from inside the callback keeps its fresh callback.
+    if (arrivalCb && waypoints.length === 0) {
+      const cb = arrivalCb;
+      arrivalCb = null;
+      cb();
+    }
   }
 
-  return { moveTo, update };
+  function getCell() {
+    return { x: Math.round(mesh.position.x / SIZE), z: Math.round(mesh.position.z / SIZE) };
+  }
+
+  return { moveTo, update, getCell };
 }
 
 // Scan the map bounds for the dug (!isSolid) cell closest to (0, 0).

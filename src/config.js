@@ -27,6 +27,8 @@ export const SHADOW_RADIUS = 4;           // PCF blur radius — softens hard sh
 export const BALL_RADIUS = 0.3;
 export const BALL_SPEED = 4;
 
+export const DIG_DELAY = 1;   // seconds the ball waits beside a rock before it breaks
+
 // Rock tops fade from full brightness at the tunnel edge down to
 // MIN_BRIGHTNESS at FADE_RADIUS cells away from the nearest dug cell.
 // The fade is a distance-field texture sampled per fragment, baked at

@@ -167,5 +167,31 @@ export function createChunkField({ scene, camera, target, isSolid, darkness }) {
     }
   }
 
-  return { ensureCoverage, processBuildQueue };
+  // Rebuild one already-loaded chunk from the current isSolid (e.g. after a dig).
+  // Unloaded/queued chunks are skipped — they'll build fresh from the new data
+  // when their turn comes.
+  function rebuild(cx, cz) {
+    const key = keyOf(cx, cz);
+    if (!loaded.has(key)) return;
+    const old = loaded.get(key);
+    if (old) { scene.remove(old); old.geometry.dispose(); }
+    const mesh = buildChunk(cx, cz);
+    loaded.set(key, mesh);
+    if (mesh) scene.add(mesh);
+  }
+
+  // A dig at (wx, wz) changes that cell's chunk, plus a neighbor chunk when the
+  // cell sits on a chunk edge (its wall faces are emitted from the neighbor).
+  // Walls only sample orthogonal neighbors, so diagonal chunks never change.
+  function invalidateCell(wx, wz) {
+    const cx = Math.floor(wx / CHUNK_SIZE), cz = Math.floor(wz / CHUNK_SIZE);
+    rebuild(cx, cz);
+    const lx = wx - cx * CHUNK_SIZE, lz = wz - cz * CHUNK_SIZE;
+    if (lx === 0) rebuild(cx - 1, cz);
+    if (lx === CHUNK_SIZE - 1) rebuild(cx + 1, cz);
+    if (lz === 0) rebuild(cx, cz - 1);
+    if (lz === CHUNK_SIZE - 1) rebuild(cx, cz + 1);
+  }
+
+  return { ensureCoverage, processBuildQueue, invalidateCell };
 }

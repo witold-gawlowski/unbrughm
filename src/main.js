@@ -6,6 +6,7 @@ import { createView } from './view.js';
 import { createChunkField } from './chunks.js';
 import { createDarkness } from './darkness.js';
 import { createBall } from './ball.js';
+import { createDigger } from './dig.js';
 import { enablePanning, enableClickToMove } from './controls.js';
 
 const { scene, camera, renderer, target, updateCamera } = createView();
@@ -13,15 +14,23 @@ const map = await loadMap();
 const darkness = createDarkness({ isSolid: map.isSolid, camera });
 const ball = createBall({ scene, isSolid: map.isSolid, bounds: map.bounds });
 
-enablePanning({ renderer, camera, target, updateCamera });
-enableClickToMove({ renderer, camera, isSolid: map.isSolid, onGroundClick: ball.moveTo });
-const { ensureCoverage, processBuildQueue } =
+const { ensureCoverage, processBuildQueue, invalidateCell } =
   createChunkField({ scene, camera, target, isSolid: map.isSolid, darkness });
+const digger = createDigger({ ball, map, invalidateCell, darkness });
+
+enablePanning({ renderer, camera, target, updateCamera });
+enableClickToMove({
+  renderer, camera, isSolid: map.isSolid,
+  onGroundClick: p => { digger.cancel(); ball.moveTo(p); },
+  onRockClick: (wx, wz) => digger.requestDig(wx, wz),
+});
 
 const clock = new THREE.Clock();
 (function animate() {
   requestAnimationFrame(animate);
-  ball.update(clock.getDelta());   // advance the ball toward its destination
+  const dt = clock.getDelta();
+  ball.update(dt);        // advance the ball toward its destination
+  digger.update(dt);      // tick the pending dig's delay, break the tile when it lands
   darkness.ensureCoverage(); // scroll the fade window with the view (same camera state)
   darkness.processBakeQueue(); // bake a few newly-exposed fade tiles this frame
   ensureCoverage();       // queue any chunks the view (plus buffer) needs

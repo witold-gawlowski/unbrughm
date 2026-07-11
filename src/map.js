@@ -25,11 +25,14 @@ export async function loadMap(url = 'dungeon.txt') {
         dugCells.add(`${col - originX},${row - originZ}`);
 
   const isSolid = (wx, wz) => !dugCells.has(`${wx},${wz}`);
+  // Carve out a cell. isSolid closes over dugCells, so pathfinding and the
+  // isSolid-seeded darkness bake see the change instantly.
+  const dig = (wx, wz) => { dugCells.add(`${wx},${wz}`); };
   // World-cell rectangle the map occupies (inclusive), for anyone who needs to
   // know where the carved region ends and the infinite solid rock begins.
   const bounds = {
     minX: -originX, maxX: gridW - 1 - originX,
     minZ: -originZ, maxZ: gridD - 1 - originZ,
   };
-  return { isSolid, bounds, gridW, gridD };
+  return { isSolid, dig, bounds, gridW, gridD };
 }
