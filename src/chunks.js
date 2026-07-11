@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { SIZE, CHUNK_SIZE, BUFFER_CHUNKS, BUILD_BUDGET, CHUNK_SPAN, SHADOWS } from './config.js';
-import { groundPoint } from './ground.js';
+import { visibleGroundRect } from './ground.js';
 
 // Suppress direct (sun) light on up-facing fragments, so cube tops are lit only
 // by the hemisphere fill. Wraps whatever onBeforeCompile the material already has
@@ -119,15 +119,10 @@ export function createChunkField({ scene, camera, target, isSolid, darkness }) {
     return mesh;
   }
 
-  // Chunk-index rectangle the camera currently sees, found by projecting the
-  // four viewport corners onto the ground (y = 0), padded by BUFFER_CHUNKS.
+  // Chunk-index rectangle the camera currently sees: the visible ground rect
+  // divided into chunk indices, padded by BUFFER_CHUNKS.
   function visibleChunkRect() {
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const [nx, ny] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const p = groundPoint(camera, nx, ny);   // this viewport corner on y = 0
-      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-      minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
-    }
+    const { minX, maxX, minZ, maxZ } = visibleGroundRect(camera);
     return {
       minCx: Math.floor(minX / CHUNK_SPAN) - BUFFER_CHUNKS,
       maxCx: Math.floor(maxX / CHUNK_SPAN) + BUFFER_CHUNKS,

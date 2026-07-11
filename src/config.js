@@ -4,6 +4,7 @@ export const SIZE = 1;            // cube size + spacing
 export const CHUNK_SIZE = 16;     // cubes are merged into 16x16 chunk meshes
 export const BUFFER_CHUNKS = 1;   // extra ring of chunks loaded beyond the visible area
 export const BUILD_BUDGET = 4;    // max chunks built per frame (time-sliced)
+export const FADE_BAKE_BUDGET = 2; // max darkness bake tiles per frame (time-sliced)
 
 export const CHUNK_SPAN = CHUNK_SIZE * SIZE;   // world size of one chunk
 

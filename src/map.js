@@ -5,8 +5,6 @@
 // outside the map is solid. Lines starting with ';' or blank lines are ignored;
 // rows may be ragged (width = longest row).
 
-import { FADE_RADIUS } from './config.js';
-
 export async function loadMap(url = 'dungeon.txt') {
   const raw = await fetch(url).then(r => r.text());
   const rows = raw.split('\n')
@@ -26,24 +24,6 @@ export async function loadMap(url = 'dungeon.txt') {
       if ((rows[row][col] ?? '') !== '#')
         dugCells.add(`${col - originX},${row - originZ}`);
 
-  // Exact Euclidean distance (in cell units) from a world point to the nearest
-  // dug-out area, capped at FADE_RADIUS. Each gap fills its whole 1x1 cell, so
-  // this measures to the cell's square, not its center: a point on the rim of a
-  // tunnel is at distance 0. Scans only the cells within reach of the cap.
-  const interiorDistance = (px, pz) => {
-    let best = FADE_RADIUS;
-    const reach = FADE_RADIUS + 0.5;
-    for (let cz = Math.ceil(pz - reach); cz <= Math.floor(pz + reach); cz++)
-      for (let cx = Math.ceil(px - reach); cx <= Math.floor(px + reach); cx++) {
-        if (!dugCells.has(`${cx},${cz}`)) continue;
-        const dx = Math.max(Math.abs(px - cx) - 0.5, 0);
-        const dz = Math.max(Math.abs(pz - cz) - 0.5, 0);
-        best = Math.min(best, Math.hypot(dx, dz));
-        if (best === 0) return 0;
-      }
-    return best;
-  };
-
   const isSolid = (wx, wz) => !dugCells.has(`${wx},${wz}`);
   // World-cell rectangle the map occupies (inclusive), for anyone who needs to
   // know where the carved region ends and the infinite solid rock begins.
@@ -51,5 +31,5 @@ export async function loadMap(url = 'dungeon.txt') {
     minX: -originX, maxX: gridW - 1 - originX,
     minZ: -originZ, maxZ: gridD - 1 - originZ,
   };
-  return { isSolid, interiorDistance, bounds, gridW, gridD };
+  return { isSolid, bounds, gridW, gridD };
 }

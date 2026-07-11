@@ -22,3 +22,16 @@ export function groundUnderCursor(camera, canvas, clientX, clientY) {
   const ny = -((clientY - r.top) / r.height) * 2 + 1;
   return groundPoint(camera, nx, ny);
 }
+
+// World-space axis-aligned rect the viewport covers on the ground (y = 0),
+// found by projecting the four viewport corners down onto the plane. Shared by
+// chunks.js (which chunks to stream) and darkness.js (which fade window to bake).
+export function visibleGroundRect(camera) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [nx, ny] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const p = groundPoint(camera, nx, ny);   // this viewport corner on y = 0
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+  }
+  return { minX, maxX, minZ, maxZ };
+}

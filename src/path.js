@@ -72,8 +72,8 @@ function reconstruct(came, goalK) {
 // Can a disc of `radius` (world units) slide along the world-space segment a→b
 // without any part of it touching a solid cell? Samples the segment finely and,
 // at each sample, measures the distance from the disc centre to every nearby
-// solid cell's 1x1 square (the same max(|p−c|−0.5, 0) box-distance as
-// interiorDistance in map.js). If any square is within `radius`, the leg is
+// solid cell's 1x1 square (the max(|p−c|−0.5, 0) box-distance to the cell's
+// square, not its centre). If any square is within `radius`, the leg is
 // blocked.
 export function hasLineOfSight(isSolid, a, b, radius) {
   const dx = b.x - a.x, dz = b.z - a.z;

@@ -24,10 +24,10 @@ The renderer draws an **infinite plane of solid rock that the map carves holes i
 
 Wiring lives in `src/main.js`, which composes five independent modules and runs the render loop. Each module is a factory returning a small interface; they share tunables from `config.js` and communicate only through the objects `main.js` passes between them:
 
-- **`map.js`** — parses `dungeon.txt` into `isSolid(wx, wz)`, the single source of truth for world geometry, plus `interiorDistance(px, pz)` (exact Euclidean distance from a world point to the nearest dug-out area, capped at `FADE_RADIUS`) and the map's cell `bounds`. World cells are integer coordinates centered on the map's origin.
+- **`map.js`** — parses `dungeon.txt` into `isSolid(wx, wz)`, the single source of truth for world geometry, plus the map's cell `bounds`. World cells are integer coordinates centered on the map's origin.
 - **`view.js`** — scene, orthographic camera, lights. A fixed isometric camera holds a constant offset from a movable ground `target`; the 3/4 view comes from the equal-axis `VIEW_OFFSET`.
 - **`chunks.js`** — the performance core. Cubes are never one mesh each; every `CHUNK_SIZE`×`CHUNK_SIZE` tile is merged into one geometry (one draw call per chunk). Each frame `ensureCoverage()` projects the viewport corners onto the ground plane to find visible chunks (plus a `BUFFER_CHUNKS` ring), queues missing ones nearest-first, and unloads/disposes chunks that scrolled away; `processBuildQueue()` builds at most `BUILD_BUDGET` per frame so panning never stalls.
-- **`darkness.js`** — pixel-precise fade of rock into darkness away from the tunnels. Bakes `interiorDistance` into a distance-field texture once at load, then patches the terrain materials (`onBeforeCompile`) to sample it per fragment and dim the diffuse color; interior surfaces sample distance 0 and stay lit.
+- **`darkness.js`** — pixel-precise fade of rock into darkness away from the tunnels. Computes the distance field with a two-pass exact Euclidean distance transform seeded straight from `isSolid` (one lookup per cell), baked into a camera-following texture window in budgeted tiles (`FADE_BAKE_BUDGET` per frame via `processBakeQueue()`, mirroring chunk streaming). Patches the terrain materials (`onBeforeCompile`) to sample it per fragment and dim the diffuse color; interior surfaces sample distance 0 and stay lit.
 - **`controls.js`** — right-mouse-drag panning by keeping the grabbed ground point under the cursor (moves `target`, not the camera directly).
 
 The recurring primitive across `chunks.js` and `controls.js` is **unprojecting a screen point onto the `y = 0` ground plane** (`unproject` then slide along the view direction until `y = 0`). This is the bridge between screen space and world space.
@@ -38,4 +38,4 @@ Edit `dungeon.txt`: `#` = solid rock, anything else (`.`, space) = a dug-out gap
 
 ## Tunables
 
-All in `config.js`: `SIZE` (cube size/spacing), `CHUNK_SIZE`, `BUFFER_CHUNKS`, `BUILD_BUDGET`, `VIEW_DISTANCE` (zoom), `BACKGROUND`, and the darkness fade (`FADE_RADIUS`, `MIN_BRIGHTNESS`, `FADE_RESOLUTION`). Material color and lights are in `view.js` / `chunks.js`.
+All in `config.js`: `SIZE` (cube size/spacing), `CHUNK_SIZE`, `BUFFER_CHUNKS`, `BUILD_BUDGET`, `VIEW_DISTANCE` (zoom), `BACKGROUND`, and the darkness fade (`FADE_RADIUS`, `MIN_BRIGHTNESS`, `FADE_RESOLUTION`, `FADE_BAKE_BUDGET`). Material color and lights are in `view.js` / `chunks.js`.
