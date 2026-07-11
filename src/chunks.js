@@ -8,7 +8,27 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { SIZE, CHUNK_SIZE, BUFFER_CHUNKS, BUILD_BUDGET, CHUNK_SPAN } from './config.js';
+import { SIZE, CHUNK_SIZE, BUFFER_CHUNKS, BUILD_BUDGET, CHUNK_SPAN, SHADOWS } from './config.js';
+import { groundPoint } from './ground.js';
+
+// Suppress direct (sun) light on up-facing fragments, so cube tops are lit only
+// by the hemisphere fill. Wraps whatever onBeforeCompile the material already has
+// (darkness.js) rather than replacing it.
+function unlitTops(material) {
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader) => {
+    if (prev) prev(shader);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vUpness;')
+      .replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nvUpness = (modelMatrix * vec4(normal, 0.0)).y;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vUpness;')
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+if (vUpness > 0.5) { reflectedLight.directDiffuse = vec3(0.0); reflectedLight.directSpecular = vec3(0.0); }`);
+  };
+  return material;
+}
 
 export function createChunkField({ scene, camera, target, isSolid, darkness }) {
   const cubeGeometry = new THREE.BoxGeometry(SIZE, SIZE, SIZE);
@@ -21,8 +41,8 @@ export function createChunkField({ scene, camera, target, isSolid, darkness }) {
 
   // darkness patches the materials so rock fades per fragment with distance
   // from the tunnels (see darkness.js); floors are interior and stay lit.
-  const rockMaterial = darkness.applyTo(
-    new THREE.MeshStandardMaterial({ color: 0x6b7b8c, roughness: 0.85 }));
+  const rockMaterial = unlitTops(darkness.applyTo(
+    new THREE.MeshStandardMaterial({ color: 0x232a32, roughness: 0.85 })));
   const floorMaterial = darkness.applyTo(
     new THREE.MeshStandardMaterial({ color: 0x3a4450, roughness: 0.95 }));
 
@@ -53,19 +73,16 @@ export function createChunkField({ scene, camera, target, isSolid, darkness }) {
     const geometry = parts.length === 1 ? parts[0] : mergeGeometries(parts, true);
     parts.forEach(p => { if (p !== geometry) p.dispose(); });
     const mesh = new THREE.Mesh(geometry, materials.length === 1 ? materials[0] : materials);
+    mesh.castShadow = mesh.receiveShadow = SHADOWS;   // walls shadow the tunnel floors
     return mesh;
   }
 
   // Chunk-index rectangle the camera currently sees, found by projecting the
   // four viewport corners onto the ground (y = 0), padded by BUFFER_CHUNKS.
   function visibleChunkRect() {
-    const fwd = new THREE.Vector3();
-    camera.getWorldDirection(fwd);
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    const p = new THREE.Vector3();
     for (const [nx, ny] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      p.set(nx, ny, -1).unproject(camera);   // this corner on the near plane
-      p.addScaledVector(fwd, -p.y / fwd.y);   // slide along view dir onto y = 0
+      const p = groundPoint(camera, nx, ny);   // this viewport corner on y = 0
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
     }
