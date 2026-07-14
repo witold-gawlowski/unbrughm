@@ -12,6 +12,10 @@
 * Should the Go server also serve the client's static files (index.html, src/, dungeon.txt), replacing python -m http.server? → Yes, serve client too (Recommended)
 * Should the client still be able to run standalone (no server), or does it become online-only?
 * rewrite the server in python
+* setup the remote server
+* distribute gold
+* develop smart contract that sends dug gold into accounts via smart contract
+* resolve P2E boom-bust (demand for currency via selling equipment)
 ~~* refactor the code into smaller files (usual threejs structure)~~
 ~~* shade black the top of the cubes that are far from interior~~
 ~~* add a walking plane~~

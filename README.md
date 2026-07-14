@@ -5,13 +5,12 @@ view, where the dungeon layout is designed with an ASCII map.
 
 ## Running
 
-The game is online-only: the client connects to the Go server in the sibling
-[`unbrughm-server`](../unbrughm-server) repo, which serves these static files
-*and* runs the multiplayer session (world state, movement, digs). From that
-repo:
+The game is online-only: the client connects to the Go server in [`server/`](server/),
+which serves these static files *and* runs the multiplayer session (world state,
+movement, digs). From the repo root:
 
 ```
-go run ./cmd/server
+cd server && go run ./cmd/server
 ```
 
 Then open <http://localhost:8000/> — one tab per player.
@@ -19,8 +18,8 @@ Then open <http://localhost:8000/> — one tab per player.
 ## Designing the dungeon
 
 The world is an infinite plane of solid cubes; the map carves holes into it.
-Edit `dungeon.txt` **in the server repo** (the copy here is no longer read —
-the server sends the dug cells over the wire):
+Edit `server/dungeon.txt` (the server parses it and sends the dug cells over the
+wire):
 
 - `#` &nbsp;→ solid rock cube (same as the surrounding infinite field)
 - anything else (`.`, space) → a dug-out gap (a hole in the field)
@@ -42,4 +41,5 @@ In `index.html`:
 ## Files
 
 - `index.html` — the scene (three.js from CDN, no build step)
-- `dungeon.txt` — the ASCII dungeon map
+- `src/` — the client modules (see `CLAUDE.md` for the architecture)
+- `server/` — the Go multiplayer server; `server/dungeon.txt` is the ASCII map
