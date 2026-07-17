@@ -3,6 +3,7 @@ package hub
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,25 @@ import (
 
 	"github.com/witold-gawlowski/unbrughm/server/internal/world"
 )
+
+// Save routes through the hub goroutine (which owns the world) and writes a
+// file the world package can reload.
+func TestSaveThroughRunLoop(t *testing.T) {
+	h := New(world.Parse("#.#\n...\n#.#\n"))
+	go h.Run()
+
+	path := filepath.Join(t.TempDir(), "world.save")
+	if err := h.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	w, ok, err := world.Load(path)
+	if err != nil || !ok {
+		t.Fatalf("reload saved world: ok=%v err=%v", ok, err)
+	}
+	if len(w.DugCells()) != 5 {
+		t.Errorf("reloaded %d dug cells, want 5", len(w.DugCells()))
+	}
+}
 
 // Integration test: two real WebSocket clients against a running hub, covering
 // welcome, join, dig relay routing, and leave.

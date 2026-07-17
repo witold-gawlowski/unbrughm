@@ -1,0 +1,3 @@
+# Runtime-persisted world state (written on server shutdown).
+server/world.save
+server/*.save.tmp

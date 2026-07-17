@@ -37,6 +37,13 @@ type inbound struct {
 	msg    clientMsg
 }
 
+// saveReq asks the hub goroutine to persist the world to path, replying on done
+// so the caller can block until the write finishes.
+type saveReq struct {
+	path string
+	done chan error
+}
+
 type Hub struct {
 	world      *world.World
 	clients    map[*Client]bool
@@ -44,6 +51,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	inbound    chan inbound
+	save       chan saveReq
 }
 
 func New(w *world.World) *Hub {
@@ -54,6 +62,7 @@ func New(w *world.World) *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		inbound:    make(chan inbound, 64),
+		save:       make(chan saveReq),
 	}
 }
 
@@ -72,10 +81,20 @@ func (h *Hub) Run() {
 			}
 		case in := <-h.inbound:
 			h.handle(in.client, in.msg)
+		case req := <-h.save:
+			req.done <- h.world.Save(req.path)
 		case <-ticker.C:
 			h.broadcastPositions()
 		}
 	}
+}
+
+// Save persists the world to path via the hub goroutine (which exclusively owns
+// the world), blocking until the write completes. Call it at shutdown.
+func (h *Hub) Save(path string) error {
+	done := make(chan error)
+	h.save <- saveReq{path: path, done: done}
+	return <-done
 }
 
 func (h *Hub) addClient(c *Client) {
