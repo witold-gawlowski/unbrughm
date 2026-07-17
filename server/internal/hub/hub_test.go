@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,10 +15,26 @@ import (
 	"github.com/witold-gawlowski/unbrughm/server/internal/world"
 )
 
+// fakeSessions is an in-memory SessionLookup: token -> account.
+type fakeSessions map[string]fakeSession
+
+type fakeSession struct {
+	id       int64
+	username string
+}
+
+func (f fakeSessions) SessionAccount(_ context.Context, token string) (int64, string, error) {
+	s, ok := f[token]
+	if !ok {
+		return 0, "", errors.New("no session")
+	}
+	return s.id, s.username, nil
+}
+
 // Save routes through the hub goroutine (which owns the world) and writes a
 // file the world package can reload.
 func TestSaveThroughRunLoop(t *testing.T) {
-	h := New(world.Parse("#.#\n...\n#.#\n"))
+	h := New(world.Parse("#.#\n...\n#.#\n"), fakeSessions{})
 	go h.Run()
 
 	path := filepath.Join(t.TempDir(), "world.save")
@@ -35,14 +53,18 @@ func TestSaveThroughRunLoop(t *testing.T) {
 // Integration test: two real WebSocket clients against a running hub, covering
 // welcome, join, dig relay routing, and leave.
 func TestTwoClientSession(t *testing.T) {
+	sessions := fakeSessions{
+		"tok1": {id: 101, username: "alice"},
+		"tok2": {id: 102, username: "bob"},
+	}
 	// A dug plus shape: origin plus its four orthogonal neighbors.
-	h := New(world.Parse("#.#\n...\n#.#\n"))
+	h := New(world.Parse("#.#\n...\n#.#\n"), sessions)
 	go h.Run()
 	srv := httptest.NewServer(http.HandlerFunc(h.ServeWs))
 	defer srv.Close()
 	url := "ws" + strings.TrimPrefix(srv.URL, "http")
 
-	c1 := dial(t, url)
+	c1 := dial(t, url+"?token=tok1")
 	defer c1.Close()
 	w1 := readUntil(t, c1, "welcome")
 	if w1["id"].(float64) != 1 {
@@ -59,7 +81,7 @@ func TestTwoClientSession(t *testing.T) {
 		t.Fatalf("first player sees %d others, want 0", n)
 	}
 
-	c2 := dial(t, url)
+	c2 := dial(t, url+"?token=tok2")
 	defer c2.Close()
 	w2 := readUntil(t, c2, "welcome")
 	spawn2 := w2["spawn"].(map[string]any)

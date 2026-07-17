@@ -3,6 +3,7 @@
 // our identity (id, spawn) and who's already here.
 
 import * as THREE from 'three';
+import { authenticate } from './auth.js';
 import { connect } from './net.js';
 import { createMap } from './map.js';
 import { createView } from './view.js';
@@ -14,7 +15,8 @@ import { createDigger } from './dig.js';
 import { enablePanning, enableClickToMove } from './controls.js';
 import { SIZE } from './config.js';
 
-const net = await connect();
+const token = await authenticate();  // blocks on the login/register overlay
+const net = await connect(token);
 const map = createMap(net.dug);
 
 const { scene, camera, renderer, target, updateCamera } = createView();

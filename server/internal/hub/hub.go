@@ -8,6 +8,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"math"
@@ -18,6 +19,13 @@ import (
 
 const tickInterval = 50 * time.Millisecond
 
+// SessionLookup resolves an opaque session token to an authenticated account.
+// *store.Store satisfies it; ServeWs calls it before upgrading a connection so
+// only logged-in players reach the hub.
+type SessionLookup interface {
+	SessionAccount(ctx context.Context, token string) (accountID int64, username string, err error)
+}
+
 // clientMsg is anything a client sends: pos (world-unit floats, but SIZE=1 so
 // they coincide with cell coordinates) or dig (integer cell).
 type clientMsg struct {
@@ -27,9 +35,10 @@ type clientMsg struct {
 }
 
 type playerState struct {
-	ID int     `json:"id"`
-	X  float64 `json:"x"`
-	Z  float64 `json:"z"`
+	ID       int     `json:"id"`
+	X        float64 `json:"x"`
+	Z        float64 `json:"z"`
+	Username string  `json:"username,omitempty"` // omitted from per-tick pos batches
 }
 
 type inbound struct {
@@ -46,6 +55,7 @@ type saveReq struct {
 
 type Hub struct {
 	world      *world.World
+	sessions   SessionLookup
 	clients    map[*Client]bool
 	nextID     int
 	register   chan *Client
@@ -54,9 +64,10 @@ type Hub struct {
 	save       chan saveReq
 }
 
-func New(w *world.World) *Hub {
+func New(w *world.World, sessions SessionLookup) *Hub {
 	return &Hub{
 		world:      w,
+		sessions:   sessions,
 		clients:    make(map[*Client]bool),
 		nextID:     1,
 		register:   make(chan *Client),
@@ -111,7 +122,7 @@ func (h *Hub) addClient(c *Client) {
 
 	others := make([]playerState, 0, len(h.clients))
 	for other := range h.clients {
-		others = append(others, playerState{ID: other.id, X: other.x, Z: other.z})
+		others = append(others, playerState{ID: other.id, X: other.x, Z: other.z, Username: other.username})
 	}
 	dug := h.world.DugCells()
 	dugPairs := make([][2]int, len(dug))
@@ -119,19 +130,20 @@ func (h *Hub) addClient(c *Client) {
 		dugPairs[i] = [2]int{cell.X, cell.Z}
 	}
 	h.send(c, map[string]any{
-		"type":    "welcome",
-		"id":      c.id,
-		"spawn":   map[string]int{"x": spawn.X, "z": spawn.Z},
-		"dug":     dugPairs,
-		"players": others,
+		"type":     "welcome",
+		"id":       c.id,
+		"username": c.username,
+		"spawn":    map[string]int{"x": spawn.X, "z": spawn.Z},
+		"dug":      dugPairs,
+		"players":  others,
 	})
 
 	h.broadcast(map[string]any{
 		"type":   "join",
-		"player": playerState{ID: c.id, X: c.x, Z: c.z},
+		"player": playerState{ID: c.id, X: c.x, Z: c.z, Username: c.username},
 	})
 	h.clients[c] = true
-	log.Printf("player %d joined at (%d, %d), %d online", c.id, spawn.X, spawn.Z, len(h.clients))
+	log.Printf("player %d (%s) joined at (%d, %d), %d online", c.id, c.username, spawn.X, spawn.Z, len(h.clients))
 }
 
 func (h *Hub) handle(c *Client, m clientMsg) {
