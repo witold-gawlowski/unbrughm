@@ -1,0 +1,22 @@
+# Dev infrastructure only. Per issue #20, the realtime tick-loop game server
+# runs as a NATIVE process (cd server && go run ./cmd/server) — do not put it in
+# a container. This compose file provides the stateful services it talks to.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: unbrughm
+      POSTGRES_PASSWORD: unbrughm
+      POSTGRES_DB: unbrughm
+    ports:
+      - "5432:5432"
+    volumes:
+      - unbrughm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unbrughm -d unbrughm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  unbrughm-pgdata:

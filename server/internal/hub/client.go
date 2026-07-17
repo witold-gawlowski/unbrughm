@@ -18,24 +18,41 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Client is one connected player. The hub goroutine owns id/x/z; the read and
-// write pumps only touch the connection and the send channel.
+// Client is one connected player. The hub goroutine owns id/x/z and the account
+// identity; the read and write pumps only touch the connection and the send
+// channel.
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
-	id   int
-	x, z float64
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan []byte
+	id        int
+	accountID int64
+	username  string
+	x, z      float64
 }
 
-// ServeWs upgrades an HTTP request to a WebSocket and hands the connection to
-// the hub. It is the handler for /ws.
+// ServeWs authenticates the request's session token, upgrades it to a
+// WebSocket, and hands the connection to the hub. It is the handler for /ws.
+// The token lookup (blocking DB I/O) happens here, before the client reaches
+// the hub's single tick goroutine.
 func (h *Hub) ServeWs(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	accountID, username, err := h.sessions.SessionAccount(r.Context(), token)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return // Upgrade already replied with an HTTP error
 	}
-	c := &Client{hub: h, conn: conn, send: make(chan []byte, sendBufferSize)}
+	c := &Client{
+		hub:       h,
+		conn:      conn,
+		send:      make(chan []byte, sendBufferSize),
+		accountID: accountID,
+		username:  username,
+	}
 	h.register <- c
 	go c.writePump()
 	go c.readPump()
